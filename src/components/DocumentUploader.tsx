@@ -1,7 +1,16 @@
-import React, { useState, ChangeEvent } from 'react';
-import { uploadData } from '@aws-amplify/storage';
-import ExcelJS from 'exceljs';
-
+import React, { useState, ChangeEvent } from "react";
+import { uploadData } from "@aws-amplify/storage";
+import ExcelJS from "exceljs";
+import {
+  Button,
+  Container,
+  Typography,
+  Box,
+  Input,
+  LinearProgress,
+  Alert,
+  Paper,
+} from "@mui/material";
 
 interface Mismatch {
   row: number;
@@ -11,17 +20,18 @@ interface Mismatch {
   error?: string;
 }
 
-// Helper function to extract a cell's text value.
-// If the cell contains a formula, its value is typically an object with a "result" property.
+// Helper function for extracting cell text.
 const getCellText = (cellValue: any): string => {
   if (cellValue === null || cellValue === undefined) return "";
-  if (typeof cellValue === 'object') {
-    // If the cell has a computed result, return that.
-    if ('result' in cellValue && cellValue.result !== undefined && cellValue.result !== null) {
+  if (typeof cellValue === "object") {
+    if (
+      "result" in cellValue &&
+      cellValue.result !== undefined &&
+      cellValue.result !== null
+    ) {
       return String(cellValue.result).trim();
     }
-    // Fallback: sometimes ExcelJS may provide a .text property.
-    if ('text' in cellValue && cellValue.text) {
+    if ("text" in cellValue && cellValue.text) {
       return String(cellValue.text).trim();
     }
     return "";
@@ -31,8 +41,11 @@ const getCellText = (cellValue: any): string => {
 
 const DocumentUploader: React.FC = () => {
   const [file, setFile] = useState<File | null>(null);
+  const [uploading, setUploading] = useState<boolean>(false);
   const [uploadResult, setUploadResult] = useState<any>(null);
   const [error, setError] = useState<string>("");
+  // Mismatches are processed for the Excel export only.
+  const [mismatches, setMismatches] = useState<Mismatch[]>([]);
 
   const handleChange = (event: ChangeEvent<HTMLInputElement>) => {
     if (event.target.files && event.target.files.length > 0) {
@@ -46,6 +59,7 @@ const DocumentUploader: React.FC = () => {
       return;
     }
     setError("");
+    setUploading(true);
 
     try {
       // Upload the original file to S3.
@@ -56,14 +70,13 @@ const DocumentUploader: React.FC = () => {
       setUploadResult(result);
       console.log("Original file upload successful:", result);
 
-      // Process only Excel files.
+      // Only process Excel files.
       if (
         file.type.includes("excel") ||
         file.name.endsWith(".xlsx") ||
         file.name.endsWith(".xls")
       ) {
         const reader = new FileReader();
-
         reader.onload = async (evt) => {
           try {
             const arrayBuffer = evt.target?.result;
@@ -72,36 +85,36 @@ const DocumentUploader: React.FC = () => {
               return;
             }
 
-            // Load the workbook from the arrayBuffer using ExcelJS.
+            // Load the workbook using ExcelJS.
             const workbook = new ExcelJS.Workbook();
             await workbook.xlsx.load(arrayBuffer as ArrayBuffer);
-
-            // Assume the first worksheet contains the data.
             const worksheet = workbook.worksheets[0];
 
-            // We'll iterate over rows starting from row 3.
-            const mismatches: Mismatch[] = [];
+            // Process Excel rows starting from row 3.
+            const newMismatches: Mismatch[] = [];
             const ignoreValues = ["", "N/A", "0", "No"];
 
             worksheet.eachRow({ includeEmpty: true }, (row, rowNumber) => {
-              if (rowNumber < 3) return; // Skip header rows.
+              if (rowNumber < 3) return; // Skip header rows
 
-              // Read cells by column letter.
-              const descriptionVal = row.getCell('B').value;
-              const technicalVal = row.getCell('D').value;
-              const vendorVal = row.getCell('E').value;
+              // Read values from specific columns.
+              const descriptionVal = row.getCell("B").value;
+              const technicalVal = row.getCell("D").value;
+              const vendorVal = row.getCell("E").value;
 
               const description = getCellText(descriptionVal);
               const technical = getCellText(technicalVal);
               const vendor = getCellText(vendorVal);
 
-              // Skip the row if technical requirement is one of the ignore values.
               if (ignoreValues.includes(technical)) return;
 
-              if (technical === "Vendor to furnish") {
-                // If vendor data is empty, record mismatch.
+              if (
+                technical === "Vendor to furnish" ||
+                technical === "Designer to Furnish"
+              ) {
+                // Record mismatch if vendor data is empty.
                 if (!vendor) {
-                  mismatches.push({
+                  newMismatches.push({
                     row: rowNumber,
                     description,
                     technical,
@@ -110,12 +123,13 @@ const DocumentUploader: React.FC = () => {
                   });
                 }
               } else {
-                // Otherwise, flag if vendor data is empty or does not match.
+                // Otherwise, flag if vendor data is missing or doesn't match.
                 if (!vendor || technical !== vendor) {
                   let errorMsg = "";
                   if (!vendor) errorMsg += "Vendor data is empty. ";
-                  if (vendor && technical !== vendor) errorMsg += "Values do not match.";
-                  mismatches.push({
+                  if (vendor && technical !== vendor)
+                    errorMsg += "Values do not match.";
+                  newMismatches.push({
                     row: rowNumber,
                     description,
                     technical,
@@ -126,12 +140,12 @@ const DocumentUploader: React.FC = () => {
               }
             });
 
-            // If mismatches exist, create a new workbook for the mismatch report using ExcelJS.
-            if (mismatches.length > 0) {
+            // If mismatches are found, generate and download an Excel report.
+            if (newMismatches.length > 0) {
               const reportWorkbook = new ExcelJS.Workbook();
               const reportWorksheet = reportWorkbook.addWorksheet("Mismatch Report");
 
-              // Add and style the header row.
+              // Create a styled header row.
               const headerRow = reportWorksheet.addRow([
                 "Row",
                 "Description",
@@ -142,14 +156,14 @@ const DocumentUploader: React.FC = () => {
               headerRow.eachCell((cell) => {
                 cell.font = { bold: true };
                 cell.fill = {
-                  type: 'pattern',
-                  pattern: 'solid',
-                  fgColor: { argb: 'FFADD8E6' } // Light blue background.
+                  type: "pattern",
+                  pattern: "solid",
+                  fgColor: { argb: "FFADD8E6" },
                 };
               });
 
-              // Add each mismatch data row.
-              mismatches.forEach((m) => {
+              // Add mismatch rows.
+              newMismatches.forEach((m) => {
                 reportWorksheet.addRow([
                   m.row,
                   m.description,
@@ -159,21 +173,20 @@ const DocumentUploader: React.FC = () => {
                 ]);
               });
 
-              // Adjust column widths.
+              // Set column widths.
               reportWorksheet.columns = [
-                { width: 8 },   // Row number
-                { width: 25 },  // Description
-                { width: 35 },  // Technical Requirement
-                { width: 25 },  // Vendor Data
-                { width: 40 }   // Error
+                { width: 8 },
+                { width: 25 },
+                { width: 35 },
+                { width: 25 },
+                { width: 40 },
               ];
 
-              // Write the report workbook to a buffer and trigger download.
+              // Trigger download of the generated Excel report.
               const buffer = await reportWorkbook.xlsx.writeBuffer();
-              const blob = new Blob(
-                [buffer],
-                { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" }
-              );
+              const blob = new Blob([buffer], {
+                type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+              });
               const url = window.URL.createObjectURL(blob);
               const a = document.createElement("a");
               a.href = url;
@@ -185,6 +198,9 @@ const DocumentUploader: React.FC = () => {
             } else {
               console.log("No mismatches found.");
             }
+
+            // Save mismatches (used only for generating the report).
+            setMismatches(newMismatches);
           } catch (err: any) {
             setError("Error processing Excel file: " + err.message);
           }
@@ -192,7 +208,9 @@ const DocumentUploader: React.FC = () => {
 
         reader.onerror = (evt) => {
           const errObj = evt.target?.error;
-          setError("Error reading file: " + (errObj ? errObj.message : "Unknown error"));
+          setError(
+            "Error reading file: " + (errObj ? errObj.message : "Unknown error")
+          );
         };
 
         reader.readAsArrayBuffer(file);
@@ -201,17 +219,77 @@ const DocumentUploader: React.FC = () => {
       }
     } catch (err: any) {
       setError("Error uploading file: " + err.message);
+    } finally {
+      setUploading(false);
     }
   };
 
   return (
-    <div>
-      <h2>Technical Datasheet Mismatch Checker</h2>
-      <input type="file" accept=".xlsx,.xls" onChange={handleChange} />
-      <button onClick={handleUpload}>Upload</button>
-      {error && <p style={{ color: "red" }}>Error: {error}</p>}
-      {uploadResult && <p>Original file uploaded details: {JSON.stringify(uploadResult)}</p>}
-    </div>
+    // Outer Box centers the UI in the middle of the page.
+    <Box
+      sx={{
+        display: "flex",
+        justifyContent: "center",
+        alignItems: "center",
+        minHeight: "100vh",
+      }}
+    >
+      <Container maxWidth="sm">
+        <Paper
+          elevation={3}
+          sx={{
+            p: 3,
+            borderRadius: 2,
+            border: "1px solid #e0e0e0",
+            mb: 4,
+          }}
+        >
+          <Typography
+            variant="h5"
+            align="center"
+            gutterBottom
+            sx={{ fontWeight: "bold", color: "#1e88e5" }}
+          >
+            Technical Datasheet Mismatch Checker
+          </Typography>
+          <Box
+            display="flex"
+            flexDirection="row"
+            justifyContent="center"
+            alignItems="center"
+            gap={2}
+            sx={{ mb: 2 }}
+          >
+            <Input
+              type="file"
+              inputProps={{ accept: ".xlsx,.xls" }}
+              onChange={handleChange}
+              disableUnderline
+            />
+            <Button
+              variant="contained"
+              color="primary"
+              onClick={handleUpload}
+              disabled={uploading}
+            >
+              Upload
+            </Button>
+          </Box>
+          {uploading && <LinearProgress sx={{ my: 2 }} />}
+          {error && (
+            <Alert severity="error" sx={{ my: 2 }}>
+              {error}
+            </Alert>
+          )}
+          {uploadResult && (
+            <Alert severity="success" sx={{ my: 2 }}>
+              File uploaded successfully!
+            </Alert>
+          )}
+        </Paper>
+        {/* The Sign Out button already implemented at the bottom left is assumed to be present elsewhere */}
+      </Container>
+    </Box>
   );
 };
 
