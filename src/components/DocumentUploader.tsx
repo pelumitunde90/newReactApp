@@ -140,7 +140,7 @@ const DocumentUploader: React.FC = () => {
               }
             });
 
-            // If mismatches are found, generate and download an Excel report.
+            // Generate and download report if mismatches are found.
             if (newMismatches.length > 0) {
               const reportWorkbook = new ExcelJS.Workbook();
               const reportWorksheet = reportWorkbook.addWorksheet("Mismatch Report");
@@ -199,7 +199,7 @@ const DocumentUploader: React.FC = () => {
               console.log("No mismatches found.");
             }
 
-            // Save mismatches (used only for generating the report).
+            // Save mismatches (for generating the report).
             setMismatches(newMismatches);
           } catch (err: any) {
             setError("Error processing Excel file: " + err.message);
@@ -209,7 +209,8 @@ const DocumentUploader: React.FC = () => {
         reader.onerror = (evt) => {
           const errObj = evt.target?.error;
           setError(
-            "Error reading file: " + (errObj ? errObj.message : "Unknown error")
+            "Error reading file: " +
+              (errObj ? errObj.message : "Unknown error")
           );
         };
 
@@ -225,13 +226,14 @@ const DocumentUploader: React.FC = () => {
   };
 
   return (
-    // Outer Box centers the UI in the middle of the page.
+    // Remove the forced full-height styling by eliminating minHeight:"100vh".
     <Box
       sx={{
         display: "flex",
         justifyContent: "center",
-        alignItems: "center",
-        minHeight: "100vh",
+        // Removed minHeight to let the container height adjust to the content.
+        mt: 4, // Optional spacing for vertical margins
+        mb: 4,
       }}
     >
       <Container maxWidth="sm">
@@ -241,7 +243,6 @@ const DocumentUploader: React.FC = () => {
             p: 3,
             borderRadius: 2,
             border: "1px solid #e0e0e0",
-            mb: 4,
           }}
         >
           <Typography
@@ -287,7 +288,7 @@ const DocumentUploader: React.FC = () => {
             </Alert>
           )}
         </Paper>
-        {/* The Sign Out button already implemented at the bottom left is assumed to be present elsewhere */}
+        {/* The Sign Out button (or any additional components) can be placed outside this Paper */}
       </Container>
     </Box>
   );
