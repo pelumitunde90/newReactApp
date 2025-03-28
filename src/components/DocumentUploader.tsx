@@ -45,7 +45,7 @@ const DocumentUploader: React.FC = () => {
   const [uploadResult, setUploadResult] = useState<any>(null);
   const [error, setError] = useState<string>("");
   // Mismatches are processed for the Excel export only.
-  const [mismatches, setMismatches] = useState<Mismatch[]>([]);
+  const [, setMismatches] = useState<Mismatch[]>([]);
 
   const handleChange = (event: ChangeEvent<HTMLInputElement>) => {
     if (event.target.files && event.target.files.length > 0) {
